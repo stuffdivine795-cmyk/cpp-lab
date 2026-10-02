@@ -57,12 +57,36 @@ main{height:auto;grid-template-columns:1fr}.editor{height:58dvh;min-height:300px
 footer{height:auto;min-height:32px;flex-wrap:wrap;padding:8px 12px;gap:8px 15px}.shortcut{display:none}.path{display:none}
 }
 @media(forced-colors:active){#paint{display:none}#code{color:CanvasText;-webkit-text-fill-color:CanvasText;caret-color:CanvasText}}
+
+.console.debug-open{grid-template-rows:42px 100px auto 42px minmax(100px,1fr);overflow:auto}
+.debug-panel{background:#1c1f26;border-bottom:1px solid #30333c;max-height:300px;overflow:auto}
+.debug-toolbar{display:flex;gap:6px;flex-wrap:wrap;padding:12px 12px 8px}
+.debug-toolbar button{padding:5px 10px}
+.debug-position{padding:0 14px 8px;font-size:14px;color:#e1c47e}
+.debug-note{font-size:12px;color:#9aa4b5;margin:8px 14px 12px;line-height:1.5}
+.variables-scroll{max-height:130px;overflow:auto;padding:0 12px}
+.variables-table{width:100%;border-collapse:collapse;font:14px/1.5 Consolas,monospace}
+.variables-table caption{text-align:left;color:#b4bece;font:14px system-ui;padding:4px 0 8px}
+.variables-table th{text-align:left;color:#8997ad;font-weight:400}
+.variables-table th,.variables-table td{padding:4px 6px;border-bottom:1px solid #30333c;vertical-align:top;overflow-wrap:anywhere;max-width:170px}
+#execution-line{position:absolute;left:0;right:0;height:24.5px;background:#e8bd5522;border-left:2px solid #dfb958;pointer-events:none}
+.gutter{flex-basis:64px}
+#gutter-lines{padding:18px 0}
+.line-number{width:100%;height:24.5px;display:block;position:relative;text-align:right;padding:0 12px 0 22px;border:0;border-radius:0;background:transparent;color:#7e889c;font:inherit;line-height:inherit}
+.line-number:hover{background:#313743}
+.line-number.has-breakpoint::before{content:"";position:absolute;left:8px;top:8px;width:9px;height:9px;background:#ef7373;border-radius:50%}
+.line-number.is-current{color:#f0ca73;background:#e8bd5522}
+.line-number:focus-visible{outline:1px solid #7bacff;outline-offset:-1px}
+#debug-start{border-color:#716044;color:#efcf8b}
+#code[readonly]{cursor:default}
+@media(max-width:760px){.console.debug-open{height:auto;min-height:450px;grid-template-rows:42px 100px auto 42px minmax(160px,1fr)}}
 </style>
 </head>
 <body>
 <header>
 <div class="brand"><span>C++</span>工作台</div>
 <span class="standard" id="standard">C++17</span>
+<button type="button" id="debug-start" title="启动基础 C++ 调试">调试</button>
 <button type="button" id="download" title="下载 main.cpp（Ctrl / ⌘ + S）">下载源码</button>
 <button type="button" id="stop" hidden>停止</button>
 <button type="button" id="run" title="编译并运行（Ctrl / ⌘ + Enter）">运行</button>
@@ -71,8 +95,9 @@ footer{height:auto;min-height:32px;flex-wrap:wrap;padding:8px 12px;gap:8px 15px}
 <section class="editor" aria-label="代码编辑器">
 <div class="tabbar"><div class="tab"><span class="file-icon" aria-hidden="true">C++</span>main.cpp</div><span class="path">UTF-8</span></div>
 <div class="code-area">
-<div class="gutter" aria-hidden="true"><pre id="gutter-lines">1</pre></div>
+<div class="gutter"><div id="gutter-lines" role="group" aria-label="点击行号设置或取消断点"></div></div>
 <div class="code-scroll">
+<div id="execution-line" aria-hidden="true" hidden></div>
 <pre id="paint" aria-hidden="true"></pre>
 <textarea id="code" aria-label="main.cpp 源代码" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" wrap="off"></textarea>
 </div>
@@ -81,6 +106,23 @@ footer{height:auto;min-height:32px;flex-wrap:wrap;padding:8px 12px;gap:8px 15px}
 <section class="console" aria-label="程序输入输出">
 <div class="label">标准输入 <small>stdin</small></div>
 <textarea id="input" aria-label="标准输入" spellcheck="false" placeholder="使用 cin 时，在运行前输入数据&#10;例如：3 5"></textarea>
+<section id="debug-panel" class="debug-panel" aria-label="调试控制与变量" hidden>
+<div class="debug-toolbar">
+<button type="button" id="debug-step" disabled title="执行到下一行（F10）">下一步</button>
+<button type="button" id="debug-continue" disabled title="执行到下一个断点（F8）">继续</button>
+<button type="button" id="debug-pause" disabled>暂停</button>
+<button type="button" id="debug-end" disabled>结束</button>
+</div>
+<div class="debug-position" id="debug-position" role="status">点击左侧行号设置断点。</div>
+<div class="variables-scroll">
+<table class="variables-table">
+<caption>当前变量</caption>
+<thead><tr><th scope="col">名称</th><th scope="col">类型</th><th scope="col">值</th></tr></thead>
+<tbody id="debug-variables"><tr><td colspan="3">尚未开始调试。</td></tr></tbody>
+</table>
+</div>
+<p class="debug-note">基础 C++ 调试：变量、循环、函数。复杂标准库可能不支持。</p>
+</section>
 <div class="label">终端 <small>编译信息 / 程序输出</small></div>
 <pre id="output" aria-live="polite" aria-atomic="true">等待运行。
 
@@ -126,13 +168,14 @@ function render() {
         last = match.index + text.length;
     }
     $("paint").innerHTML = html + escapeHtml(code.value.slice(last)) + "\n";
-    $("gutter-lines").textContent = Array.from({length: code.value.split("\n").length}, (_, i) => i + 1).join("\n");
+    renderGutter();
     syncScroll();
     updateCursor();
 }
 function syncScroll() {
     $("paint").style.transform = "translate(" + -code.scrollLeft + "px," + -code.scrollTop + "px)";
     $("gutter-lines").style.transform = "translateY(" + -code.scrollTop + "px)";
+    updateExecutionLine();
 }
 function updateCursor() {
     const before = code.value.slice(0, code.selectionStart);
@@ -148,11 +191,12 @@ function saveDraft() {
         $("saved").textContent = "保存失败，请下载源码";
     }
 }
-code.addEventListener("input", () => { render(); saveDraft(); });
+code.addEventListener("input", () => { breakpoints.clear(); render(); saveDraft(); });
 stdin.addEventListener("input", saveDraft);
 code.addEventListener("scroll", syncScroll);
 for (const name of ["click", "keyup", "select"]) code.addEventListener(name, updateCursor);
 code.addEventListener("keydown", event => {
+    if (code.readOnly) return;
     const start = code.selectionStart, end = code.selectionEnd;
     if (event.key === "Tab") {
         event.preventDefault();
@@ -235,7 +279,7 @@ function formatResult(result) {
     return sections.join("\n\n");
 }
 async function runCode() {
-    if (activeRun) return;
+    if (activeRun || debugWorker) return;
     if (!code.value.trim()) {
         output.textContent = "请先写入 C++ 代码。";
         setStatus("没有代码", "error");
@@ -248,6 +292,7 @@ async function runCode() {
     const source = code.value;
     const input = stdin.value;
     runButton.disabled = true;
+    $("debug-start").disabled = true;
     stopButton.hidden = false;
     output.textContent = "正在编译并运行…";
     setStatus("编译并运行中…", "running");
@@ -278,6 +323,7 @@ async function runCode() {
         clearTimeout(timer);
         activeRun = null;
         runButton.disabled = false;
+        $("debug-start").disabled = false;
         stopButton.hidden = true;
     }
 }
@@ -288,6 +334,190 @@ stopButton.addEventListener("click", () => {
         activeRun.controller.abort();
     }
 });
+
+const breakpoints = new Set();
+let debugWorker = null;
+let debugState = "idle";
+let debugLine = 0;
+let debugWatchdog = null;
+let latestDebugOutput = "";
+function renderGutter() {
+    const count = code.value.split("\n").length;
+    $("gutter-lines").innerHTML = Array.from({length:count}, (_, i) => {
+        const line = i + 1;
+        const breakpoint = breakpoints.has(line);
+        return '<button type="button" class="line-number' + (breakpoint ? " has-breakpoint" : "") +
+            (debugLine === line ? " is-current" : "") + '" data-line="' + line +
+            '" aria-pressed="' + breakpoint + '" aria-label="第 ' + line + ' 行，' +
+            (breakpoint ? "取消断点" : "设置断点") + '">' + line + '</button>';
+    }).join("");
+}
+function updateExecutionLine() {
+    const highlight = $("execution-line");
+    highlight.hidden = !debugLine;
+    if (debugLine) {
+        const lineHeight = parseFloat(getComputedStyle(code).lineHeight) || 24.5;
+        highlight.style.top = (18 + (debugLine - 1) * lineHeight - code.scrollTop) + "px";
+        highlight.style.height = lineHeight + "px";
+    }
+}
+function showDebugLine(line) {
+    debugLine = line;
+    renderGutter();
+    if (line) {
+        const lineHeight = parseFloat(getComputedStyle(code).lineHeight) || 24.5;
+        const top = 18 + (line - 1) * lineHeight;
+        if (top < code.scrollTop || top + lineHeight > code.scrollTop + code.clientHeight) {
+            code.scrollTop = Math.max(0, top - code.clientHeight / 3);
+        }
+    }
+    syncScroll();
+}
+$("gutter-lines").addEventListener("click", event => {
+    const button = event.target.closest("[data-line]");
+    if (!button || !$("gutter-lines").contains(button)) return;
+    const line = Number(button.dataset.line);
+    if (breakpoints.has(line)) breakpoints.delete(line);
+    else breakpoints.add(line);
+    renderGutter();
+    if (debugWorker) debugWorker.postMessage({type:"breakpoints", lines:[...breakpoints]});
+});
+function updateDebugControls(state) {
+    debugState = state;
+    const paused = state === "paused";
+    const running = state === "running";
+    const active = !!debugWorker;
+    $("debug-step").disabled = !paused;
+    $("debug-continue").disabled = !paused;
+    $("debug-pause").disabled = !running;
+    $("debug-end").disabled = !active;
+    $("debug-start").disabled = active || !!activeRun;
+    runButton.disabled = active || !!activeRun;
+    code.readOnly = active;
+    stdin.readOnly = active;
+    code.setAttribute("aria-readonly", String(active));
+    stdin.setAttribute("aria-readonly", String(active));
+}
+function clearDebugWatchdog() {
+    if (debugWatchdog !== null) clearTimeout(debugWatchdog);
+    debugWatchdog = null;
+}
+function armDebugWatchdog() {
+    clearDebugWatchdog();
+    debugWatchdog = setTimeout(() => {
+        if (!debugWorker) return;
+        finishDebug("调试耗时过长，已停止。可减少输入或检查死循环。", "error");
+    }, 15000);
+}
+function showVariables(variables) {
+    $("debug-variables").innerHTML = variables.length ? variables.map(item =>
+        "<tr><td>" + escapeHtml(item.name) + "</td><td>" + escapeHtml(item.type) +
+        "</td><td>" + escapeHtml(item.value) + "</td></tr>"
+    ).join("") : '<tr><td colspan="3">当前没有可查看的变量。</td></tr>';
+}
+function finishDebug(message, state = "") {
+    clearDebugWatchdog();
+    if (debugWorker) debugWorker.terminate();
+    debugWorker = null;
+    showDebugLine(0);
+    updateDebugControls("idle");
+    $("standard").textContent = compiler ? "C++17 · " + compiler.name.replace("gcc-", "GCC ") : "C++17";
+    $("debug-position").textContent = message;
+    setStatus(message, state);
+}
+function handleDebugMessage(event) {
+    const data = event.data;
+    latestDebugOutput = typeof data.output === "string" ? data.output : latestDebugOutput;
+    output.textContent = latestDebugOutput || "程序尚无输出。";
+    if (data.type === "running") {
+        updateDebugControls("running");
+        setStatus("调试执行中…", "running");
+        $("debug-position").textContent = "正在执行，可点击暂停或结束。";
+    } else if (data.type === "paused") {
+        clearDebugWatchdog();
+        showDebugLine(data.line);
+        showVariables(data.variables || []);
+        updateDebugControls("paused");
+        const text = "已暂停 · 第 " + data.line + " 行，列 " + data.column;
+        $("debug-position").textContent = text + "（高亮位置尚未执行）";
+        setStatus(text);
+    } else if (data.type === "done") {
+        showVariables([]);
+        const message = "调试结束 · 退出码 " + data.exitCode;
+        output.textContent = (latestDebugOutput || "程序没有输出。") + "\n\n" + message;
+        finishDebug(message, String(data.exitCode) === "0" ? "" : "error");
+    } else if (data.type === "error") {
+        output.textContent = (latestDebugOutput ? latestDebugOutput + "\n\n" : "") +
+            "调试错误：" + data.message + "\n\n调试模式支持基础 C++；复杂标准库请使用“运行”或完整 C++ 调试器。";
+        showVariables([]);
+        finishDebug("调试出错，请查看终端。", "error");
+    }
+}
+function startDebug() {
+    if (debugWorker || activeRun) return;
+    if (!code.value.trim()) {
+        output.textContent = "请先写入 C++ 代码。";
+        code.focus();
+        return;
+    }
+    $("debug-panel").hidden = false;
+    document.querySelector(".console").classList.add("debug-open");
+    showVariables([]);
+    latestDebugOutput = "";
+    output.textContent = "正在启动调试器…";
+    $("standard").textContent = "基础 C++ 调试";
+    $("debug-position").textContent = "启动后暂停，可单步执行。点击行号设置断点。";
+    try {
+        debugWorker = new Worker("./debug-worker.js");
+        const worker = debugWorker;
+        worker.onmessage = event => { if (debugWorker === worker) handleDebugMessage(event); };
+        worker.onerror = event => {
+            if (debugWorker !== worker) return;
+            event.preventDefault();
+            output.textContent = "调试器加载失败，请刷新网页后重试。";
+            finishDebug("调试器加载失败", "error");
+        };
+        updateDebugControls("loading");
+        setStatus("正在启动调试器…", "running");
+        armDebugWatchdog();
+        debugWorker.postMessage({type:"start", code:code.value, input:stdin.value, breakpoints:[...breakpoints]});
+    } catch (error) {
+        output.textContent = "无法启动调试器：" + error.message;
+        finishDebug("调试器启动失败", "error");
+    }
+}
+function debugCommand(type) {
+    if (!debugWorker) return;
+    if ((type === "step" || type === "continue") && debugState !== "paused") return;
+    if (type === "pause" && debugState !== "running") return;
+    if (type !== "pause") {
+        updateDebugControls("running");
+        armDebugWatchdog();
+    }
+    debugWorker.postMessage({type});
+}
+$("debug-start").addEventListener("click", startDebug);
+$("debug-step").addEventListener("click", () => debugCommand("step"));
+$("debug-continue").addEventListener("click", () => debugCommand("continue"));
+$("debug-pause").addEventListener("click", () => debugCommand("pause"));
+$("debug-end").addEventListener("click", () => {
+    output.textContent = (latestDebugOutput || "程序没有输出。") + "\n\n调试已停止。";
+    finishDebug("调试已停止");
+});
+document.addEventListener("keydown", event => {
+    if (!debugWorker) return;
+    if (event.key === "F10") {
+        event.preventDefault();
+        debugCommand("step");
+    } else if (event.key === "F8") {
+        event.preventDefault();
+        debugCommand("continue");
+    } else if (event.key === "F5" && event.shiftKey) {
+        event.preventDefault();
+        $("debug-end").click();
+    }
+});
+
 render();
 </script>
 </body>
