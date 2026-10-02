@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="简洁的 C++ 在线工作台，支持 C++17、标准输入、真实编译和源码下载。">
+<meta name="color-scheme" content="dark">
+<title>C++ 工作台</title>
+<style>
+:root{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:#dedee3;background:#18191d;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0}
+button,textarea{font:inherit}
+button{border:1px solid #3b3e48;background:#292c33;color:#ebedf2;border-radius:5px;padding:7px 13px;cursor:pointer;font-size:14px}
+button:hover{background:#343844}
+button:disabled{opacity:.55;cursor:wait}
+button:focus-visible,a:focus-visible{outline:2px solid #7bacff;outline-offset:3px}
+header{height:58px;padding:0 20px;border-bottom:1px solid #30333c;display:flex;align-items:center;gap:10px;background:#202228}
+.brand{font-size:16px;font-weight:600;margin-right:auto;letter-spacing:.2px}
+.brand span{color:#79aafa;margin-right:10px}
+.standard{font-size:13px;color:#a3aab7;margin-right:10px}
+#run{background:#285eac;border-color:#3574cb}
+#run:hover{background:#306cbe}
+main{display:grid;grid-template-columns:minmax(0,1.9fr) minmax(280px,1fr);height:calc(100dvh - 90px)}
+section{min-width:0;min-height:0}
+.editor{display:flex;flex-direction:column;border-right:1px solid #30333c}
+.tabbar,.label{height:42px;display:flex;align-items:center;background:#202228;border-bottom:1px solid #30333c;font-size:14px}
+.tab{align-self:stretch;display:flex;align-items:center;padding:0 20px;gap:10px;border-top:2px solid #70a6fc;background:#18191d}
+.file-icon{font-size:12px;color:#78aafb}
+.tabbar .path{margin-left:auto;margin-right:16px;color:#8c94a3;font-size:12px}
+.code-area{display:flex;position:relative;flex:1;min-height:0;overflow:hidden}
+.gutter{flex:0 0 54px;overflow:hidden;text-align:right;color:#626b7d;border-right:1px solid #252832;user-select:none}
+#gutter-lines{margin:0;padding:18px 12px 18px 0}
+.code-scroll{position:relative;min-width:0;flex:1;overflow:hidden}
+#paint,#code,#gutter-lines{font:14px/1.75 Consolas,"SFMono-Regular","Liberation Mono",monospace;tab-size:4;font-variant-ligatures:none}
+#paint{position:absolute;top:0;left:0;margin:0;padding:18px;white-space:pre;pointer-events:none;color:#d7dce5;min-width:100%;will-change:transform}
+#code{position:absolute;inset:0;width:100%;height:100%;resize:none;margin:0;padding:18px;border:0;outline:0;background:transparent;color:transparent;-webkit-text-fill-color:transparent;caret-color:#fff;white-space:pre;overflow:auto}
+#code::selection{background:#2856a677}
+#code:focus-visible{box-shadow:inset 0 0 0 1px #4f78b2}
+.comment{color:#7e8997}.string{color:#cfac85}.keyword{color:#8bb8ff}.number{color:#a7cc9b}.directive{color:#bc9ce2}
+.console{display:grid;grid-template-rows:42px 145px 42px minmax(0,1fr)}
+.label{padding:0 16px;color:#bbc2ce;gap:8px}
+.label small{font-size:12px;color:#818b9d;margin-left:auto}
+#input{resize:none;border:0;border-bottom:1px solid #30333c;outline:0;width:100%;padding:15px 16px;color:#d7dce5;background:#1b1d23;font:14px/1.75 Consolas,monospace}
+#input:focus-visible{box-shadow:inset 0 0 0 1px #4f78b2}
+#input::placeholder{color:#7b8493}
+#output{margin:0;padding:16px;white-space:pre-wrap;overflow:auto;overflow-wrap:anywhere;font:14px/1.75 Consolas,monospace;color:#c9d2df;background:#16181d}
+footer{height:32px;padding:0 16px;display:flex;align-items:center;gap:18px;border-top:1px solid #30333c;color:#969fac;font-size:12px}
+#cursor{margin-left:auto}
+#status[data-state="error"]{color:#f5a19a}
+#status[data-state="running"]{color:#8bb8ff}
+[hidden]{display:none!important}
+@media(max-width:760px){
+header{padding:0 12px;gap:7px}.brand{font-size:14px}.brand span{margin-right:5px}.standard{display:none}button{padding:7px 9px}
+main{height:auto;grid-template-columns:1fr}.editor{height:58dvh;min-height:300px;border-right:0;border-bottom:1px solid #30333c}
+.console{height:42dvh;min-height:310px;grid-template-rows:42px 100px 42px minmax(0,1fr)}
+footer{height:auto;min-height:32px;flex-wrap:wrap;padding:8px 12px;gap:8px 15px}.shortcut{display:none}.path{display:none}
+}
+@media(forced-colors:active){#paint{display:none}#code{color:CanvasText;-webkit-text-fill-color:CanvasText;caret-color:CanvasText}}
+</style>
+</head>
+<body>
+<header>
+<div class="brand"><span>C++</span>工作台</div>
+<span class="standard" id="standard">C++17</span>
+<button type="button" id="download" title="下载 main.cpp（Ctrl / ⌘ + S）">下载源码</button>
+<button type="button" id="stop" hidden>停止</button>
+<button type="button" id="run" title="编译并运行（Ctrl / ⌘ + Enter）">运行</button>
+</header>
+<main>
+<section class="editor" aria-label="代码编辑器">
+<div class="tabbar"><div class="tab"><span class="file-icon" aria-hidden="true">C++</span>main.cpp</div><span class="path">UTF-8</span></div>
+<div class="code-area">
+<div class="gutter" aria-hidden="true"><pre id="gutter-lines">1</pre></div>
+<div class="code-scroll">
+<pre id="paint" aria-hidden="true"></pre>
+<textarea id="code" aria-label="main.cpp 源代码" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" wrap="off"></textarea>
+</div>
+</div>
+</section>
+<section class="console" aria-label="程序输入输出">
+<div class="label">标准输入 <small>stdin</small></div>
+<textarea id="input" aria-label="标准输入" spellcheck="false" placeholder="使用 cin 时，在运行前输入数据&#10;例如：3 5"></textarea>
+<div class="label">终端 <small>编译信息 / 程序输出</small></div>
+<pre id="output" aria-live="polite" aria-atomic="true">等待运行。
+
+Ctrl / ⌘ + Enter 编译并运行
+Ctrl / ⌘ + S 下载源码
+
+运行时，代码与输入会发送至 Wandbox 编译服务。</pre>
+</section>
+</main>
+<footer>
+<span id="status" role="status">就绪</span>
+<span id="saved">自动保存至此浏览器</span>
+<span id="cursor">行 1，列 1</span>
+<span class="shortcut">Tab 缩进 · C++17</span>
+</footer>
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const code = $("code"), stdin = $("input"), output = $("output");
+const runButton = $("run"), stopButton = $("stop");
+const storageKey = "cpp-lab-workspace-v1";
+const initialCode = '#include <iostream>\nusing namespace std;\n\nint main() {\n    cout << "Hello, C++!" << endl;\n    return 0;\n}\n';
+code.value = initialCode;
+try {
+    const draft = JSON.parse(localStorage.getItem(storageKey) || "null");
+    if (draft && typeof draft.code === "string") code.value = draft.code;
+    if (draft && typeof draft.stdin === "string") stdin.value = draft.stdin;
+} catch {
+    $("saved").textContent = "请下载源码以保存";
+}
+const escapeHtml = value => value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+const tokenPattern = /\/\/[^\n]*|\/\*[\s\S]*?(?:\*\/|$)|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|^\s*#[^\n]*|\b(?:alignas|auto|bool|break|case|char|class|const|constexpr|continue|default|delete|do|double|else|enum|false|float|for|if|int|long|namespace|new|nullptr|private|protected|public|return|short|signed|sizeof|static|struct|switch|template|this|true|typename|unsigned|using|void|while)\b|\b\d+(?:\.\d+)?\b/gm;
+function render() {
+    let last = 0, html = "";
+    for (const match of code.value.matchAll(tokenPattern)) {
+        html += escapeHtml(code.value.slice(last, match.index));
+        const text = match[0];
+        const kind = text.startsWith("//") || text.startsWith("/*") ? "comment"
+            : /^\s*#/.test(text) ? "directive"
+            : text.startsWith('"') || text.startsWith("'") ? "string"
+            : /^\d/.test(text) ? "number" : "keyword";
+        html += '<span class="' + kind + '">' + escapeHtml(text) + "</span>";
+        last = match.index + text.length;
+    }
+    $("paint").innerHTML = html + escapeHtml(code.value.slice(last)) + "\n";
+    $("gutter-lines").textContent = Array.from({length: code.value.split("\n").length}, (_, i) => i + 1).join("\n");
+    syncScroll();
+    updateCursor();
+}
+function syncScroll() {
+    $("paint").style.transform = "translate(" + -code.scrollLeft + "px," + -code.scrollTop + "px)";
+    $("gutter-lines").style.transform = "translateY(" + -code.scrollTop + "px)";
+}
+function updateCursor() {
+    const before = code.value.slice(0, code.selectionStart);
+    const line = before.split("\n").length;
+    const column = before.length - before.lastIndexOf("\n");
+    $("cursor").textContent = "行 " + line + "，列 " + column;
+}
+function saveDraft() {
+    try {
+        localStorage.setItem(storageKey, JSON.stringify({code: code.value, stdin: stdin.value}));
+        $("saved").textContent = "已自动保存";
+    } catch {
+        $("saved").textContent = "保存失败，请下载源码";
+    }
+}
+code.addEventListener("input", () => { render(); saveDraft(); });
+stdin.addEventListener("input", saveDraft);
+code.addEventListener("scroll", syncScroll);
+for (const name of ["click", "keyup", "select"]) code.addEventListener(name, updateCursor);
+code.addEventListener("keydown", event => {
+    const start = code.selectionStart, end = code.selectionEnd;
+    if (event.key === "Tab") {
+        event.preventDefault();
+        const lineStart = code.value.lastIndexOf("\n", start - 1) + 1;
+        if (start !== end || event.shiftKey) {
+            const block = code.value.slice(lineStart, end);
+            const adjusted = event.shiftKey ? block.replace(/^( {1,4}|\t)/gm, "") : block.replace(/^/gm, "    ");
+            const firstDelta = adjusted.split("\n")[0].length - block.split("\n")[0].length;
+            code.setRangeText(adjusted, lineStart, end, "select");
+            code.selectionStart = Math.max(lineStart, start + firstDelta);
+            code.selectionEnd = Math.max(code.selectionStart, end + adjusted.length - block.length);
+        } else code.setRangeText("    ", start, end, "end");
+        code.dispatchEvent(new Event("input"));
+    } else if (event.key === "Enter" && !event.ctrlKey && !event.metaKey) {
+        event.preventDefault();
+        const lineStart = code.value.lastIndexOf("\n", start - 1) + 1;
+        const current = code.value.slice(lineStart, start);
+        const indentation = (current.match(/^[ \t]*/) || [""])[0];
+        const extra = current.trimEnd().endsWith("{") ? "    " : "";
+        code.setRangeText("\n" + indentation + extra, start, end, "end");
+        code.dispatchEvent(new Event("input"));
+    }
+});
+function downloadSource() {
+    const url = URL.createObjectURL(new Blob([code.value], {type:"text/plain;charset=utf-8"}));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "main.cpp";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+$("download").addEventListener("click", downloadSource);
+document.addEventListener("keydown", event => {
+    if (event.ctrlKey || event.metaKey) {
+        if (event.key === "Enter") {
+            event.preventDefault();
+            if (!runButton.disabled) runButton.click();
+        } else if (event.key.toLowerCase() === "s") {
+            event.preventDefault();
+            downloadSource();
+        }
+    }
+});
+const api = "https://wandbox.org/api/";
+let compiler = null;
+let activeRun = null;
+function setStatus(text, state = "") {
+    $("status").textContent = text;
+    $("status").dataset.state = state;
+}
+async function getCompiler(signal) {
+    if (compiler) return compiler;
+    const response = await fetch(api + "list.json", {signal});
+    if (!response.ok) throw new Error("编译器列表请求失败（HTTP " + response.status + "）");
+    const list = await response.json();
+    if (!Array.isArray(list)) throw new Error("编译器服务返回了无效列表");
+    const candidates = list.filter(item => item.language === "C++" && /^gcc-/.test(item.name));
+    const stable = candidates.filter(item => !/head|beta|snapshot/i.test(item.name));
+    stable.sort((a,b) => b.name.localeCompare(a.name, "en", {numeric:true}));
+    const selected = stable[0] || candidates.find(item => item.name === "gcc-head") || candidates[0];
+    if (!selected) throw new Error("服务暂时没有可用的 GCC 编译器");
+    const choices = (selected.switches || []).flatMap(item => item.options || []);
+    const standard = choices.find(item => item.name === "c++17") || choices.find(item => item.name === "gnu++17");
+    if (!standard) throw new Error("服务暂时没有可用的 C++17 编译器");
+    compiler = {name:selected.name, options:standard.name};
+    return compiler;
+}
+function formatResult(result) {
+    if (result.status === undefined && !result.signal) throw new Error(result.error || "服务没有返回运行状态");
+    const sections = [];
+    const compilation = result.compiler_message || [result.compiler_output, result.compiler_error].filter(Boolean).join("\n");
+    if (compilation) sections.push("编译信息\n" + compilation);
+    if (result.program_output) sections.push(result.program_output);
+    if (result.program_error) sections.push("标准错误\n" + result.program_error);
+    if (!result.program_output && !result.program_error && result.program_message) sections.push(result.program_message);
+    if (!sections.length) sections.push("程序没有输出。");
+    sections.push(result.signal ? "程序终止：" + result.signal : "进程退出码：" + result.status);
+    return sections.join("\n\n");
+}
+async function runCode() {
+    if (activeRun) return;
+    if (!code.value.trim()) {
+        output.textContent = "请先写入 C++ 代码。";
+        setStatus("没有代码", "error");
+        code.focus();
+        return;
+    }
+    const controller = new AbortController();
+    const job = {controller, reason:""};
+    activeRun = job;
+    const source = code.value;
+    const input = stdin.value;
+    runButton.disabled = true;
+    stopButton.hidden = false;
+    output.textContent = "正在编译并运行…";
+    setStatus("编译并运行中…", "running");
+    const timer = setTimeout(() => { job.reason = "timeout"; controller.abort(); }, 30000);
+    try {
+        const selected = await getCompiler(controller.signal);
+        $("standard").textContent = "C++17 · " + selected.name.replace("gcc-", "GCC ");
+        const response = await fetch(api + "compile.json", {
+            method:"POST",
+            headers:{"Content-Type":"application/json"},
+            signal:controller.signal,
+            body:JSON.stringify({compiler:selected.name, code:source, stdin:input, options:selected.options})
+        });
+        if (!response.ok) throw new Error("编译请求失败（HTTP " + response.status + "）");
+        const result = await response.json();
+        output.textContent = formatResult(result);
+        const success = String(result.status) === "0" && !result.signal;
+        setStatus(success ? "运行完成" : "编译或运行出错", success ? "" : "error");
+    } catch (error) {
+        if (error.name === "AbortError") {
+            output.textContent = job.reason === "timeout" ? "请求超时，请稍后重试。" : "已取消本次请求。";
+            setStatus(job.reason === "timeout" ? "请求超时" : "已取消", job.reason === "timeout" ? "error" : "");
+        } else {
+            output.textContent = "无法完成运行：" + error.message + "\n\n请检查网络或稍后重试。在线编译服务暂时不可用时，也会出现此问题。";
+            setStatus("运行失败", "error");
+        }
+    } finally {
+        clearTimeout(timer);
+        activeRun = null;
+        runButton.disabled = false;
+        stopButton.hidden = true;
+    }
+}
+runButton.addEventListener("click", runCode);
+stopButton.addEventListener("click", () => {
+    if (activeRun) {
+        activeRun.reason = "cancel";
+        activeRun.controller.abort();
+    }
+});
+render();
+</script>
+</body>
+</html>
