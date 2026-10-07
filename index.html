@@ -10,7 +10,7 @@
 :root{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:#dedee3;background:#18191d;color-scheme:dark}
 *{box-sizing:border-box}
 body{margin:0}
-button,textarea{font:inherit}
+button,textarea,select,input{font:inherit}
 button{border:1px solid #3b3e48;background:#292c33;color:#ebedf2;border-radius:5px;padding:7px 13px;cursor:pointer;font-size:14px}
 button:hover{background:#343844}
 button:disabled{opacity:.55;cursor:wait}
@@ -39,6 +39,17 @@ section{min-width:0;min-height:0}
 #code:focus-visible{box-shadow:inset 0 0 0 1px #4f78b2}
 .comment{color:#7e8997}.string{color:#cfac85}.keyword{color:#8bb8ff}.number{color:#a7cc9b}.directive{color:#bc9ce2}
 .console{display:grid;grid-template-rows:42px 145px 42px minmax(0,1fr)}
+.console{position:relative}
+#run-mode{max-width:135px;min-height:36px;background:#292c33;color:#ebedf2;border:1px solid #3b3e48;border-radius:5px;padding:5px}
+#input-panel{position:absolute;bottom:0;left:0;right:0;background:#202228;border-top:1px solid #4f78b2;padding:12px 16px;z-index:2}
+#input-panel label{display:block;font-size:14px;color:#c5d9f8;margin-bottom:8px}
+.input-actions{display:flex;gap:8px;flex-wrap:wrap}
+#live-input{flex:1;min-width:100px;width:100%;min-height:44px;border:1px solid #53617a;border-radius:5px;background:#16181d;color:#ebedf2;padding:8px 10px;font:16px Consolas,monospace}
+#input-panel button{min-height:44px}
+.console.waiting #output{padding-bottom:145px}
+select:focus-visible,input:focus-visible{outline:2px solid #7bacff;outline-offset:2px}
+#status[data-state="waiting"]{color:#efcf8b}
+@media(max-width:760px){#run-mode{max-width:100px;font-size:13px}header{height:auto;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}.console.waiting{min-height:360px}}
 .label{padding:0 16px;color:#bbc2ce;gap:8px}
 .label small{font-size:12px;color:#818b9d;margin-left:auto}
 #input{resize:none;border:0;border-bottom:1px solid #30333c;outline:0;width:100%;padding:15px 16px;color:#d7dce5;background:#1b1d23;font:14px/1.75 Consolas,monospace}
@@ -86,6 +97,7 @@ footer{height:auto;min-height:32px;flex-wrap:wrap;padding:8px 12px;gap:8px 15px}
 <header>
 <div class="brand"><span>C++</span>工作台</div>
 <span class="standard" id="standard">C++17</span>
+<select id="run-mode" aria-label="运行方式"><option value="interactive">交互运行</option><option value="gcc">GCC 编译运行</option></select>
 <button type="button" id="debug-start" title="启动基础 C++ 调试">调试</button>
 <button type="button" id="download" title="下载 main.cpp（Ctrl / ⌘ + S）">下载源码</button>
 <button type="button" id="stop" hidden>停止</button>
@@ -104,8 +116,8 @@ footer{height:auto;min-height:32px;flex-wrap:wrap;padding:8px 12px;gap:8px 15px}
 </div>
 </section>
 <section class="console" aria-label="程序输入输出">
-<div class="label">标准输入 <small>stdin</small></div>
-<textarea id="input" aria-label="标准输入" spellcheck="false" placeholder="使用 cin 时，在运行前输入数据&#10;例如：3 5"></textarea>
+<div class="label" id="input-label">预先输入（可留空） <small>stdin</small></div>
+<textarea id="input" aria-label="预先输入" spellcheck="false" placeholder="可留空，运行后按提示输入&#10;也可以预先填好多组数据"></textarea>
 <section id="debug-panel" class="debug-panel" aria-label="调试控制与变量" hidden>
 <div class="debug-toolbar">
 <button type="button" id="debug-step" disabled title="执行到下一行（F10）">下一步</button>
@@ -129,7 +141,16 @@ footer{height:auto;min-height:32px;flex-wrap:wrap;padding:8px 12px;gap:8px 15px}
 Ctrl / ⌘ + Enter 编译并运行
 Ctrl / ⌘ + S 下载源码
 
-运行时，代码与输入会发送至 Wandbox 编译服务。</pre>
+交互运行：基础 C++，遇到 cin 时等待输入。
+GCC 编译运行：C++17，运行前填好全部输入，代码会发送至 Wandbox。</pre>
+<form id="input-panel" hidden>
+<label for="live-input" id="live-label">等待输入</label>
+<div class="input-actions">
+<input id="live-input" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="输入数据，按回车发送">
+<button type="submit">发送</button>
+<button type="button" id="input-eof" title="告诉程序输入已经结束">结束输入</button>
+</div>
+</form>
 </section>
 </main>
 <footer>
@@ -279,6 +300,7 @@ function formatResult(result) {
     return sections.join("\n\n");
 }
 async function runCode() {
+    if ($("run-mode").value === "interactive") { startInteractive(); return; }
     if (activeRun || debugWorker) return;
     if (!code.value.trim()) {
         output.textContent = "请先写入 C++ 代码。";
@@ -292,6 +314,7 @@ async function runCode() {
     const source = code.value;
     const input = stdin.value;
     runButton.disabled = true;
+    $("run-mode").disabled = true;
     $("debug-start").disabled = true;
     stopButton.hidden = false;
     output.textContent = "正在编译并运行…";
@@ -323,12 +346,18 @@ async function runCode() {
         clearTimeout(timer);
         activeRun = null;
         runButton.disabled = false;
+        $("run-mode").disabled = false;
         $("debug-start").disabled = false;
         stopButton.hidden = true;
     }
 }
 runButton.addEventListener("click", runCode);
 stopButton.addEventListener("click", () => {
+    if (interactiveWorker) {
+        output.textContent = (interactiveOutput || "程序没有输出。") + "\n\n已停止。";
+        finishInteractive("已停止");
+        return;
+    }
     if (activeRun) {
         activeRun.reason = "cancel";
         activeRun.controller.abort();
@@ -393,6 +422,7 @@ function updateDebugControls(state) {
     $("debug-end").disabled = !active;
     $("debug-start").disabled = active || !!activeRun;
     runButton.disabled = active || !!activeRun;
+    $("run-mode").disabled = active || !!activeRun;
     code.readOnly = active;
     stdin.readOnly = active;
     code.setAttribute("aria-readonly", String(active));
@@ -454,7 +484,7 @@ function handleDebugMessage(event) {
     }
 }
 function startDebug() {
-    if (debugWorker || activeRun) return;
+    if (debugWorker || activeRun || interactiveWorker) return;
     if (!code.value.trim()) {
         output.textContent = "请先写入 C++ 代码。";
         code.focus();
@@ -518,6 +548,114 @@ document.addEventListener("keydown", event => {
     }
 });
 
+let interactiveWorker = null;
+let interactiveOutput = "";
+let interactiveWaiting = false;
+let interactiveWatchdog = null;
+function showInputPanel(waiting, line) {
+    interactiveWaiting = waiting;
+    $("input-panel").hidden = !waiting;
+    document.querySelector(".console").classList.toggle("waiting", waiting);
+    if (waiting) {
+        $("live-label").textContent = "等待输入" + (line ? " · 第 " + line + " 行" : "");
+        $("live-input").focus();
+    }
+}
+function armInteractiveWatchdog() {
+    clearTimeout(interactiveWatchdog);
+    interactiveWatchdog = setTimeout(() => {
+        if (!interactiveWorker || interactiveWaiting) return;
+        output.textContent = (interactiveOutput || "") + "\n\n执行耗时过长，已停止。请检查循环。";
+        finishInteractive("执行超时", "error");
+    }, 15000);
+}
+function finishInteractive(message, state = "") {
+    clearTimeout(interactiveWatchdog);
+    if (interactiveWorker) interactiveWorker.terminate();
+    interactiveWorker = null;
+    showInputPanel(false);
+    runButton.disabled = false;
+    $("debug-start").disabled = false;
+    $("run-mode").disabled = false;
+    code.readOnly = false;
+    stdin.readOnly = false;
+    stopButton.hidden = true;
+    setStatus(message, state);
+}
+function startInteractive() {
+    if (interactiveWorker || activeRun || debugWorker) return;
+    if (!code.value.trim()) { output.textContent = "请先写入 C++ 代码。"; code.focus(); return; }
+    $("debug-panel").hidden = true;
+    document.querySelector(".console").classList.remove("debug-open");
+    interactiveOutput = "";
+    output.textContent = "正在启动交互运行…";
+    $("standard").textContent = "基础 C++ · 本地交互";
+    try {
+        interactiveWorker = new Worker("./interactive-worker.js");
+        const worker = interactiveWorker;
+        worker.onmessage = event => {
+            if (interactiveWorker !== worker) return;
+            const data = event.data;
+            interactiveOutput = typeof data.output === "string" ? data.output : interactiveOutput;
+            output.textContent = interactiveOutput;
+            if (data.type === "waiting") {
+                clearTimeout(interactiveWatchdog);
+                setStatus("等待输入", "waiting");
+                showInputPanel(true, data.line);
+            } else if (data.type === "done") {
+                output.textContent = (interactiveOutput || "程序没有输出。") + "\n\n进程退出码：" + data.exitCode;
+                finishInteractive("运行完成", String(data.exitCode) === "0" ? "" : "error");
+            } else if (data.type === "error") {
+                output.textContent = (interactiveOutput ? interactiveOutput + "\n\n" : "") +
+                    "交互运行错误：" + data.message + "\n\n交互运行支持基础 C++。不支持的语法或标准库可切换到“GCC 编译运行”，并预先填好输入。";
+                finishInteractive("运行出错，请查看终端", "error");
+            }
+            output.scrollTop = output.scrollHeight;
+        };
+        worker.onerror = event => {
+            if (interactiveWorker !== worker) return;
+            event.preventDefault();
+            output.textContent = "交互运行器加载失败，请刷新网页后重试。";
+            finishInteractive("加载失败", "error");
+        };
+        runButton.disabled = true;
+        $("debug-start").disabled = true;
+        $("run-mode").disabled = true;
+        code.readOnly = true;
+        stdin.readOnly = true;
+        stopButton.hidden = false;
+        setStatus("交互运行中…", "running");
+        armInteractiveWatchdog();
+        worker.postMessage({type:"start", code:code.value, input:stdin.value});
+    } catch (error) {
+        output.textContent = "无法启动交互运行：" + error.message;
+        finishInteractive("启动失败", "error");
+    }
+}
+$("input-panel").addEventListener("submit", event => {
+    event.preventDefault();
+    if (!interactiveWorker || !interactiveWaiting) return;
+    const text = $("live-input").value + "\n";
+    $("live-input").value = "";
+    showInputPanel(false);
+    setStatus("交互运行中…", "running");
+    armInteractiveWatchdog();
+    interactiveWorker.postMessage({type:"input", text});
+});
+$("input-eof").addEventListener("click", () => {
+    if (!interactiveWorker || !interactiveWaiting) return;
+    showInputPanel(false);
+    setStatus("交互运行中…", "running");
+    armInteractiveWatchdog();
+    interactiveWorker.postMessage({type:"eof"});
+});
+$("run-mode").addEventListener("change", () => {
+    const gcc = $("run-mode").value === "gcc";
+    $("input-label").firstChild.textContent = gcc ? "标准输入（运行前填好） " : "预先输入（可留空） ";
+    stdin.placeholder = gcc ? "运行前填好全部输入，输入结束即 EOF\n例如：120 80" : "可留空，运行后按提示输入\n也可以预先填好多组数据";
+    $("standard").textContent = gcc ? "C++17" : "基础 C++ · 本地交互";
+});
+$("run-mode").dispatchEvent(new Event("change"));
 render();
 </script>
 </body>
